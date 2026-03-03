@@ -18,6 +18,10 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleDeleteReport = (id: string) => {
+    setReports((prev) => prev.filter(report => report.id !== id));
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
 
@@ -77,7 +81,7 @@ export default function Home() {
             }`}>
             <DashboardMetrics reports={reports} />
             <DashboardCharts reports={reports} />
-            <RecentReportsTable reports={reports} />
+            <RecentReportsTable reports={reports} onDelete={handleDeleteReport} />
           </div>
 
           {/* Form View */}

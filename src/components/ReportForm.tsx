@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Clock, Box, DollarSign, Send, Factory, Target, TextIcon } from "lucide-react";
+import { generateUUID } from "@/lib/utils";
 
 interface ReportFormProps {
     onSubmitSuccess: (data: ProductionReport) => void;
@@ -36,6 +37,7 @@ const CATEGORIES: LossCategory[] = [
     "Machinery/Mechanic Problems",
     "Monitoring Lapses",
     "Raw Materials",
+    "Needle Issue",
 ];
 
 const LINES = ["1", "2", "3", "5", "6", "7", "8", "9", "10", "11", "12", "13"];
@@ -46,17 +48,19 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
         resolver: zodResolver(reportFormSchema) as any,
         defaultValues: {
             date: new Date().toISOString().split("T")[0],
-            lineNumber: "12",
-            dailyProductionTarget: undefined as unknown as number, // Let user type initially
+            lineNumber: "" as any,
+            dailyProductionTarget: undefined as unknown as number,
             dailyProductionAchieved: undefined as unknown as number,
-            workingHours: 10,
+            totalMachines: undefined as unknown as number,
+            workingHours: undefined as unknown as number,
             unitPriceUSD: undefined as unknown as number,
             writtenReport: "",
             metrics: {
-                "Operator Absenteeism": { timeLostMinutes: 0, quantityLost: 0, costLostUSD: 0 },
-                "Machinery/Mechanic Problems": { timeLostMinutes: 0, quantityLost: 0, costLostUSD: 0 },
-                "Monitoring Lapses": { timeLostMinutes: 0, quantityLost: 0, costLostUSD: 0 },
-                "Raw Materials": { timeLostMinutes: 0, quantityLost: 0, costLostUSD: 0 },
+                "Operator Absenteeism": { timeLostMinutes: 0, machineOff: 0, quantityLost: 0, costLostUSD: 0 },
+                "Machinery/Mechanic Problems": { timeLostMinutes: 0, machineOff: 0, quantityLost: 0, costLostUSD: 0 },
+                "Monitoring Lapses": { timeLostMinutes: 0, machineOff: 0, quantityLost: 0, costLostUSD: 0 },
+                "Raw Materials": { timeLostMinutes: 0, machineOff: 0, quantityLost: 0, costLostUSD: 0 },
+                "Needle Issue": { timeLostMinutes: 0, machineOff: 0, quantityLost: 0, costLostUSD: 0 },
             },
         },
     });
@@ -66,13 +70,32 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
     const metrics = useWatch({ control, name: "metrics" });
     const dailyTarget = useWatch({ control, name: "dailyProductionTarget" }) || 0;
     const workingHours = useWatch({ control, name: "workingHours" }) || 10;
+    const totalMachines = useWatch({ control, name: "totalMachines" }) || 0;
     const unitPrice = useWatch({ control, name: "unitPriceUSD" }) || 0;
 
     const handleTimeChange = (category: LossCategory, timeLost: number) => {
         setValue(`metrics.${category}.timeLostMinutes`, timeLost, { shouldValidate: true });
+        const machineOff = getValues(`metrics.${category}.machineOff`) || 0;
 
         const wh = workingHours > 0 ? workingHours : 1;
-        const qtyLost = (dailyTarget / wh) * (timeLost / 60);
+        const tm = totalMachines > 0 ? totalMachines : 1;
+
+        // Qty lost = (daily target / working hour / 60 / total machine) * machine off * timeLostMinutes
+        const qtyLost = (dailyTarget / wh / 60 / tm) * machineOff * timeLost;
+        const costLost = qtyLost * unitPrice;
+
+        setValue(`metrics.${category}.quantityLost`, Number(qtyLost.toFixed(2)), { shouldValidate: true });
+        setValue(`metrics.${category}.costLostUSD`, Number(costLost.toFixed(2)), { shouldValidate: true });
+    };
+
+    const handleMachineOffChange = (category: LossCategory, machineOff: number) => {
+        setValue(`metrics.${category}.machineOff`, machineOff, { shouldValidate: true });
+        const timeLost = getValues(`metrics.${category}.timeLostMinutes`) || 0;
+
+        const wh = workingHours > 0 ? workingHours : 1;
+        const tm = totalMachines > 0 ? totalMachines : 1;
+
+        const qtyLost = (dailyTarget / wh / 60 / tm) * machineOff * timeLost;
         const costLost = qtyLost * unitPrice;
 
         setValue(`metrics.${category}.quantityLost`, Number(qtyLost.toFixed(2)), { shouldValidate: true });
@@ -91,10 +114,34 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
         });
     }
 
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === "Enter") {
+            const form = (e.target as HTMLElement).closest("form");
+            if (!form) return;
+
+            const index = Array.from(form.elements).indexOf(e.target as any);
+            if (index === -1) return;
+
+            // Find next interactive element that isn't a hidden field or disabled
+            for (let i = index + 1; i < form.elements.length; i++) {
+                const element = form.elements[i] as HTMLElement;
+                if (
+                    (element.tagName === "INPUT" || element.tagName === "SELECT" || element.tagName === "TEXTAREA" || (element.tagName === "BUTTON" && element.getAttribute('type') === 'submit')) &&
+                    !element.hasAttribute("disabled") &&
+                    element.getAttribute("type") !== "hidden"
+                ) {
+                    e.preventDefault();
+                    element.focus();
+                    break;
+                }
+            }
+        }
+    };
+
     const onSubmit = (data: ReportFormValues) => {
         // Structure final report
         const newReport: ProductionReport = {
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             ...data,
             writtenReport: data.writtenReport || "",
             totalTimeLost: totalTime,
@@ -105,16 +152,18 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
         reset({
             date: new Date().toISOString().split("T")[0],
             lineNumber: data.lineNumber, // Keep same line for mass entry maybe?
+            totalMachines: data.totalMachines,
             dailyProductionTarget: data.dailyProductionTarget,
             dailyProductionAchieved: data.dailyProductionAchieved,
-            workingHours: data.workingHours,
+            workingHours: undefined as unknown as number,
             unitPriceUSD: data.unitPriceUSD,
             writtenReport: "",
             metrics: {
-                "Operator Absenteeism": { timeLostMinutes: 0, quantityLost: 0, costLostUSD: 0 },
-                "Machinery/Mechanic Problems": { timeLostMinutes: 0, quantityLost: 0, costLostUSD: 0 },
-                "Monitoring Lapses": { timeLostMinutes: 0, quantityLost: 0, costLostUSD: 0 },
-                "Raw Materials": { timeLostMinutes: 0, quantityLost: 0, costLostUSD: 0 },
+                "Operator Absenteeism": { timeLostMinutes: 0, machineOff: 0, quantityLost: 0, costLostUSD: 0 },
+                "Machinery/Mechanic Problems": { timeLostMinutes: 0, machineOff: 0, quantityLost: 0, costLostUSD: 0 },
+                "Monitoring Lapses": { timeLostMinutes: 0, machineOff: 0, quantityLost: 0, costLostUSD: 0 },
+                "Raw Materials": { timeLostMinutes: 0, machineOff: 0, quantityLost: 0, costLostUSD: 0 },
+                "Needle Issue": { timeLostMinutes: 0, machineOff: 0, quantityLost: 0, costLostUSD: 0 },
             },
         });
     };
@@ -140,7 +189,7 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
                                 <FormItem>
                                     <FormLabel className="text-slate-700 font-semibold">Date</FormLabel>
                                     <FormControl>
-                                        <Input type="date" className="focus-visible:ring-indigo-500 border-slate-200 bg-slate-50/50" {...field} />
+                                        <Input type="date" onKeyDown={handleKeyDown} className="focus-visible:ring-indigo-500 border-slate-200 bg-slate-50/50" {...field} />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
@@ -154,7 +203,7 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
                                     <FormLabel className="text-slate-700 font-semibold">Line Number</FormLabel>
                                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                                         <FormControl>
-                                            <SelectTrigger className="focus:ring-indigo-500 border-slate-200 bg-slate-50/50">
+                                            <SelectTrigger onKeyDown={handleKeyDown} className="focus:ring-indigo-500 border-slate-200 bg-slate-50/50">
                                                 <SelectValue placeholder="Select a line" />
                                             </SelectTrigger>
                                         </FormControl>
@@ -179,6 +228,7 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
                                             placeholder="Eg. 1000"
                                             type="number"
                                             min="0"
+                                            onKeyDown={handleKeyDown}
                                             className="focus-visible:ring-indigo-500 border-slate-200 bg-slate-50/50"
                                             {...field}
                                             value={field.value || ""}
@@ -189,11 +239,56 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
                                                 // Recalculate metrics
                                                 const newTarget = isNaN(val) ? 0 : val;
                                                 const currentPrice = getValues("unitPriceUSD") || 0;
-                                                const currentWH = getValues("workingHours") || 10;
+                                                const currentWH = getValues("workingHours") || 1;
+                                                const currentTM = getValues("totalMachines") || 1;
                                                 const wh = currentWH > 0 ? currentWH : 1;
+                                                const tm = currentTM > 0 ? currentTM : 1;
+
                                                 CATEGORIES.forEach(cat => {
                                                     const t = getValues(`metrics.${cat}.timeLostMinutes`) || 0;
-                                                    const q = (newTarget / wh) * (t / 60);
+                                                    const mOff = getValues(`metrics.${cat}.machineOff`) || 0;
+                                                    const q = (newTarget / wh / 60 / tm) * mOff * t;
+                                                    setValue(`metrics.${cat}.quantityLost`, Number(q.toFixed(2)));
+                                                    setValue(`metrics.${cat}.costLostUSD`, Number((q * currentPrice).toFixed(2)));
+                                                });
+                                            }}
+                                        />
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+                        <FormField
+                            control={control}
+                            name="totalMachines"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel className="text-slate-700 font-semibold flex items-center gap-1.5"><Factory className="w-3.5 h-3.5 text-indigo-500" /> Total Machines</FormLabel>
+                                    <FormControl>
+                                        <Input
+                                            placeholder="Eg. 30"
+                                            type="number"
+                                            min="1"
+                                            onKeyDown={handleKeyDown}
+                                            className="focus-visible:ring-indigo-500 border-slate-200 bg-slate-50/50"
+                                            {...field}
+                                            value={field.value || ""}
+                                            onChange={e => {
+                                                const val = e.target.valueAsNumber;
+                                                field.onChange(isNaN(val) ? undefined : val);
+
+                                                // Recalculate metrics
+                                                const newTM = isNaN(val) ? 1 : val;
+                                                const tm = newTM > 0 ? newTM : 1;
+                                                const currentTarget = getValues("dailyProductionTarget") || 0;
+                                                const currentPrice = getValues("unitPriceUSD") || 0;
+                                                const currentWH = getValues("workingHours") || 1;
+                                                const wh = currentWH > 0 ? currentWH : 1;
+
+                                                CATEGORIES.forEach(cat => {
+                                                    const t = getValues(`metrics.${cat}.timeLostMinutes`) || 0;
+                                                    const mOff = getValues(`metrics.${cat}.machineOff`) || 0;
+                                                    const q = (currentTarget / wh / 60 / tm) * mOff * t;
                                                     setValue(`metrics.${cat}.quantityLost`, Number(q.toFixed(2)));
                                                     setValue(`metrics.${cat}.costLostUSD`, Number((q * currentPrice).toFixed(2)));
                                                 });
@@ -215,6 +310,7 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
                                             placeholder="Eg. 950"
                                             type="number"
                                             min="0"
+                                            onKeyDown={handleKeyDown}
                                             className="focus-visible:ring-indigo-500 border-slate-200 bg-slate-50/50"
                                             {...field}
                                             value={field.value || ""}
@@ -240,6 +336,7 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
                                             type="number"
                                             step="0.5"
                                             min="0.5"
+                                            onKeyDown={handleKeyDown}
                                             className="focus-visible:ring-indigo-500 border-slate-200 bg-slate-50/50"
                                             {...field}
                                             value={field.value || ""}
@@ -248,13 +345,17 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
                                                 field.onChange(isNaN(val) ? undefined : val);
 
                                                 // Recalculate metrics
-                                                const newWH = isNaN(val) ? 10 : val;
+                                                const newWH = isNaN(val) ? 1 : val;
                                                 const wh = newWH > 0 ? newWH : 1;
                                                 const currentTarget = getValues("dailyProductionTarget") || 0;
                                                 const currentPrice = getValues("unitPriceUSD") || 0;
+                                                const currentTM = getValues("totalMachines") || 1;
+                                                const tm = currentTM > 0 ? currentTM : 1;
+
                                                 CATEGORIES.forEach(cat => {
                                                     const t = getValues(`metrics.${cat}.timeLostMinutes`) || 0;
-                                                    const q = (currentTarget / wh) * (t / 60);
+                                                    const mOff = getValues(`metrics.${cat}.machineOff`) || 0;
+                                                    const q = (currentTarget / wh / 60 / tm) * mOff * t;
                                                     setValue(`metrics.${cat}.quantityLost`, Number(q.toFixed(2)));
                                                     setValue(`metrics.${cat}.costLostUSD`, Number((q * currentPrice).toFixed(2)));
                                                 });
@@ -277,6 +378,7 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
                                             type="number"
                                             step="0.01"
                                             min="0"
+                                            onKeyDown={handleKeyDown}
                                             className="focus-visible:ring-indigo-500 border-slate-200 bg-slate-50/50"
                                             {...field}
                                             value={field.value || ""}
@@ -287,11 +389,15 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
                                                 // Recalculate metrics
                                                 const currentTarget = getValues("dailyProductionTarget") || 0;
                                                 const newPrice = isNaN(val) ? 0 : val;
-                                                const currentWH = getValues("workingHours") || 10;
+                                                const currentWH = getValues("workingHours") || 1;
+                                                const currentTM = getValues("totalMachines") || 1;
                                                 const wh = currentWH > 0 ? currentWH : 1;
+                                                const tm = currentTM > 0 ? currentTM : 1;
+
                                                 CATEGORIES.forEach(cat => {
                                                     const t = getValues(`metrics.${cat}.timeLostMinutes`) || 0;
-                                                    const q = (currentTarget / wh) * (t / 60);
+                                                    const mOff = getValues(`metrics.${cat}.machineOff`) || 0;
+                                                    const q = (currentTarget / wh / 60 / tm) * mOff * t;
                                                     setValue(`metrics.${cat}.costLostUSD`, Number((q * newPrice).toFixed(2)));
                                                 });
                                             }}
@@ -328,7 +434,7 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
                                             </span>
                                         </CardTitle>
                                     </CardHeader>
-                                    <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <CardContent className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                                         <FormField
                                             control={control}
                                             name={`metrics.${category}.timeLostMinutes`}
@@ -342,6 +448,7 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
                                                             type="number"
                                                             step="1"
                                                             min="0"
+                                                            onKeyDown={handleKeyDown}
                                                             placeholder="Eg. 30"
                                                             className="focus-visible:ring-indigo-500 h-9"
                                                             {...field}
@@ -350,6 +457,35 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
                                                                 const val = e.target.valueAsNumber;
                                                                 const timeLost = isNaN(val) ? 0 : val;
                                                                 handleTimeChange(category, timeLost);
+                                                            }}
+                                                        />
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+                                        <FormField
+                                            control={control}
+                                            name={`metrics.${category}.machineOff`}
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel className="text-slate-600 flex items-center gap-1.5 text-xs font-semibold">
+                                                        <Factory className="w-3.5 h-3.5 text-slate-400" /> Machine Off
+                                                    </FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            type="number"
+                                                            step="1"
+                                                            min="0"
+                                                            onKeyDown={handleKeyDown}
+                                                            placeholder="Eg. 5"
+                                                            className="focus-visible:ring-indigo-500 h-9"
+                                                            {...field}
+                                                            value={field.value || ""}
+                                                            onChange={(e) => {
+                                                                const val = e.target.valueAsNumber;
+                                                                const mOff = isNaN(val) ? 0 : val;
+                                                                handleMachineOffChange(category, mOff);
                                                             }}
                                                         />
                                                     </FormControl>
@@ -424,6 +560,7 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
                                     <FormControl>
                                         <Textarea
                                             placeholder="Write the detailed reason behind the production losses here..."
+                                            onKeyDown={handleKeyDown}
                                             className="resize-none h-24 focus-visible:ring-indigo-500 bg-slate-50/50"
                                             {...field}
                                         />
@@ -444,7 +581,7 @@ export function ReportForm({ onSubmitSuccess }: ReportFormProps) {
                                 <p className="text-slate-400 text-sm font-medium mb-1 flex items-center gap-1">
                                     <Clock className="w-4 h-4" /> Total Hours
                                 </p>
-                                <p className="text-2xl font-bold text-white">{totalTime.toFixed(1)} <span className="text-sm font-normal text-slate-400">hrs</span></p>
+                                <p className="text-2xl font-bold text-white">{(totalTime / 60).toFixed(1)} <span className="text-sm font-normal text-slate-400">hrs</span></p>
                             </div>
                             <Separator orientation="vertical" className="h-10 bg-slate-700 hidden md:block" />
                             <div>

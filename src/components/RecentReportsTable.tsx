@@ -10,12 +10,15 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
+import { Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface RecentReportsTableProps {
     reports: ProductionReport[];
+    onDelete: (id: string) => void;
 }
 
-export function RecentReportsTable({ reports }: RecentReportsTableProps) {
+export function RecentReportsTable({ reports, onDelete }: RecentReportsTableProps) {
     // Sort reports by date descending
     const sortedReports = [...reports].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -42,6 +45,7 @@ export function RecentReportsTable({ reports }: RecentReportsTableProps) {
                                     <TableHead className="text-right">Qty Lost</TableHead>
                                     <TableHead className="text-right">Cost Lost</TableHead>
                                     <TableHead className="text-right">Reason</TableHead>
+                                    <TableHead className="text-right w-[80px]">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -64,6 +68,16 @@ export function RecentReportsTable({ reports }: RecentReportsTableProps) {
                                         </TableCell>
                                         <TableCell className="text-right text-slate-500 max-w-[150px] truncate" title={report.writtenReport || ""}>
                                             {report.writtenReport || "-"}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={() => onDelete(report.id)}
+                                                className="h-8 w-8 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
                                         </TableCell>
                                     </TableRow>
                                 ))}

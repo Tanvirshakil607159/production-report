@@ -25,9 +25,10 @@ const CATEGORIES: LossCategory[] = [
     "Machinery/Mechanic Problems",
     "Monitoring Lapses",
     "Raw Materials",
+    "Needle Issue",
 ];
 
-const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#f43f5e"]; // Indigo, Emerald, Amber, Rose
+const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#f43f5e", "#8b5cf6"]; // Indigo, Emerald, Amber, Rose, Violet
 
 export function DashboardCharts({ reports }: DashboardChartsProps) {
     // Aggregate data for Cost Lost across categories

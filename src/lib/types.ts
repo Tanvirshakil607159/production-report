@@ -2,10 +2,12 @@ export type LossCategory =
     | "Operator Absenteeism"
     | "Machinery/Mechanic Problems"
     | "Monitoring Lapses"
-    | "Raw Materials";
+    | "Raw Materials"
+    | "Needle Issue";
 
 export interface CategoryMetrics {
     timeLostMinutes: number;
+    machineOff: number;
     quantityLost: number;
     costLostUSD: number;
 }
@@ -16,6 +18,7 @@ export interface ProductionReport {
     id?: string;
     date: string;
     lineNumber: string;
+    totalMachines: number;
     workingHours: number;
     dailyProductionTarget: number;
     dailyProductionAchieved: number;
